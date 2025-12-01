@@ -1,0 +1,74 @@
+package com.teamcloud.bookmoa.domain.book.service;
+
+import com.teamcloud.bookmoa.domain.book.client.AladinApiClient;
+import com.teamcloud.bookmoa.domain.book.dto.AladinApiResponse;
+import com.teamcloud.bookmoa.domain.book.dto.AladinBookItem;
+import com.teamcloud.bookmoa.domain.book.entity.Book;
+import com.teamcloud.bookmoa.domain.book.repository.BookRepository;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.transaction.annotation.Transactional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class BookService {
+
+    private final BookRepository bookRepository;
+    private final AladinApiClient aladinApiClient;
+
+    @Cacheable(value = "bookSearch", key = "#query")
+    public AladinApiResponse searchBooks(String query){
+        log.info("도서 검색 - 검색어: {}", query);
+        return aladinApiClient.searchBooks(query);
+    }
+
+    @Cacheable(value = "book", key = "#isbn")
+    public Book getBookByIsbn(String isbn){
+        log.info("도서 상세 조회 - ISBN: {}", isbn);
+
+        return bookRepository.findById(isbn)
+                .orElseGet(()->fetchFromApi(isbn));
+    }
+
+    @Transactional
+    private Book fetchFromApi(String isbn){
+        log.info("DB에 없는 책 - 알라딘 API 호출 및 저장 isbn: {}", isbn);
+
+        AladinApiResponse response = aladinApiClient.searchBooks(isbn);
+
+        if(response.getItem() == null || response.getItem().isEmpty()){
+            throw new IllegalArgumentException("해당 ISBN의 책을 찾을 수 없습니다: "+isbn);
+        }
+
+        AladinBookItem item = response.getItem().getFirst();
+        Book book = aladinBookToBook(item);
+
+        return book;
+    }
+
+    private Book aladinBookToBook(AladinBookItem item){
+        LocalDate publishDate = null;
+
+        // 오래된 책이나 몇몇 책은 출간일 정보가 없는 경우가 있기 때문에 해당 경우 예방책
+        if (item.getPubDate() != null && !item.getPubDate().isEmpty()){
+            publishDate = LocalDate.parse(item.getPubDate(), DateTimeFormatter.ISO_DATE);
+        }
+
+        return Book.builder()
+                .isbn(item.getIsbn13())
+                .title(item.getTitle())
+                .author(item.getAuthor())
+                .publisher(item.getPublisher())
+                .coverImage(item.getCover())
+                .publishDate(publishDate)
+                .build();
+    }
+
+}
