@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # MySQL db 서비스
+  mysql:
+    image: mysql:8.0
+    container_name: bookmoa-mysql # 컨테이너 이름
+    environment:
+      MYSQL_ROOT_PASSWORD: root1234 # root 계정 비밀번호
+      MYSQL_DATABASE: bookmoa       # 초기 생성 DB명
+      MYSQL_USER: bookmoa           # 애플리케이션용 초기 사용자 계정
+      MYSQL_PASSWORD: bookmoa1234   # 애플리케이션용 초기 사용자 비밀번호
+    ports:
+      - "3306:3306" # 호스트:컨테이너 포트 매핑
+    volumes:
+      - mysql-data:/var/lib/mysql     # 데이터 영속성을 위한 볼륨 마운트
+    networks:
+      - bookmoa-network  # 서비스 간 통신을 위한 네트워크
+
+  # Redis 캐시 서비스
+  redis:
+    image: redis:7.2-alpine # 경량화된 Redis 7 버전 이미지
+    container_name: bookmoa-redis
+    ports:
+      - "6379:6379" # Redis 기본 포트
+    networks:
+      - bookmoa-network
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management-alpine # 관리 UI 포함 RabbitMQ 이미지
+    container_name: bookmoa-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: bookmoa      # RabbitMQ 사용자 계정
+      RABBITMQ_DEFAULT_PASS: bookmoa1234  # RabbitMQ 사용자 비밀번호
+    ports:
+      - "5672:5672" # AMQP 프로토콜 포트 (애플리케이션 연결용)
+      - "15672:15672" # Management UI 포트 (웹 관리 콘솔)
+    networks:
+      - bookmoa-network
+
+# 데이터 영속성을 위한 볼륨 정의
+volumes:
+  mysql-data:  # MySQL 데이터를 저장할 Docker 볼륨
+
+# 컨테이너 간 통신을 위한 네트워크 정의
+networks:
+  bookmoa-network:
+    driver: bridge  # 브릿지 네트워크 드라이버 사용 (같은 네트워크 내 컨테이너끼리 통신 가능)
