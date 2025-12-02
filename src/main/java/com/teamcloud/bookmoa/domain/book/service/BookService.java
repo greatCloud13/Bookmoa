@@ -29,16 +29,21 @@ public class BookService {
         return aladinApiClient.searchBooks(query);
     }
 
+    /**
+     * ISBN을 통해 db 도서 조회
+     * db에 해당 도서없을 시 API를 통해 조회
+     * 저장에는 ISBN 13을 사용
+     */
     @Cacheable(value = "book", key = "#isbn")
     public Book getBookByIsbn(String isbn){
         log.info("도서 상세 조회 - ISBN: {}", isbn);
 
         return bookRepository.findById(isbn)
-                .orElseGet(()->fetchFromApi(isbn));
+                .orElseGet(()->fetchAndSave(isbn));
     }
 
     @Transactional
-    private Book fetchFromApi(String isbn){
+    private Book fetchAndSave(String isbn){
         log.info("DB에 없는 책 - 알라딘 API 호출 및 저장 isbn: {}", isbn);
 
         AladinApiResponse response = aladinApiClient.searchBooks(isbn);
@@ -50,7 +55,7 @@ public class BookService {
         AladinBookItem item = response.getItem().getFirst();
         Book book = aladinBookToBook(item);
 
-        return book;
+        return bookRepository.save(book);
     }
 
     private Book aladinBookToBook(AladinBookItem item){
