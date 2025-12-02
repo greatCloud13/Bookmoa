@@ -42,4 +42,11 @@ public class Review {
         this.rating = rating;
         this.createdAt = LocalDateTime.now();
     }
+
+    // 리뷰 수정
+    public void update(String content, Integer rating){
+        this.content = content;
+        this.rating = rating;
+    }
+
 }
