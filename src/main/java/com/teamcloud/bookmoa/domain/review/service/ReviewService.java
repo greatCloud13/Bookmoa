@@ -5,6 +5,8 @@ import com.teamcloud.bookmoa.domain.book.service.BookService;
 import com.teamcloud.bookmoa.domain.review.dto.ReviewRequest;
 import com.teamcloud.bookmoa.domain.review.dto.ReviewResponse;
 import com.teamcloud.bookmoa.domain.review.entity.Review;
+import com.teamcloud.bookmoa.domain.review.event.ReviewEvent;
+import com.teamcloud.bookmoa.domain.review.event.ReviewEventPublisher;
 import com.teamcloud.bookmoa.domain.review.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +24,7 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final BookService bookService;
+    private final ReviewEventPublisher eventPublisher;
 
     @Transactional
     public ReviewResponse createReview(ReviewRequest request){
@@ -38,6 +41,9 @@ public class ReviewService {
                 .build();
 
         Review savedReview = reviewRepository.save(review);
+        
+        // 통계 업데이트 이벤트 발행
+        eventPublisher.publishReviewEvent(ReviewEvent.create(request.getIsbn()));
 
         return ReviewResponse.from(savedReview);
     }
@@ -61,6 +67,8 @@ public class ReviewService {
 
         review.update(request.getContent(), request.getRating());
 
+        eventPublisher.publishReviewEvent(ReviewEvent.update(review.getBook().getIsbn()));
+
         return ReviewResponse.from(review);
     }
 
@@ -71,7 +79,11 @@ public class ReviewService {
         Review review = reviewRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("리뷰를 찾을 수 없습니다: " + id));
 
+        String isbn = review.getBook().getIsbn();
+
         reviewRepository.delete(review);
+
+        eventPublisher.publishReviewEvent(ReviewEvent.update(isbn));
     }
 
 }
