@@ -6,6 +6,7 @@ import com.teamcloud.bookmoa.domain.book.dto.AladinBookItem;
 import com.teamcloud.bookmoa.domain.book.entity.Book;
 import com.teamcloud.bookmoa.domain.book.repository.BookRepository;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -23,11 +25,36 @@ public class BookService {
     private final BookRepository bookRepository;
     private final AladinApiClient aladinApiClient;
 
+    private static final int MIN_REVIEWS = 5; // 최소 리뷰 수 (베이지안 평균 계산에 이용함)
+
     @Cacheable(value = "bookSearch", key = "#query")
     public AladinApiResponse searchBooks(String query){
         log.info("도서 검색 - 검색어: {}", query);
         return aladinApiClient.searchBooks(query);
     }
+
+    @Cacheable(value = "popularBooks")
+    public List<Book> getPopularBooks(int limit){
+        log.info("인기 도서 조회 - 개수: {}", limit);
+
+        // 전체 평균 계산
+        Double globalAvg = bookRepository.getGlobalAverageRating();
+
+        // 리뷰가 0일 경우 빈 리스트 반환
+        if(globalAvg == null){
+            log.warn("리뷰가 있는 도서가 없습니다.");
+            return List.of();
+        }
+
+        log.info("전체 평균 평점: {}, 최소 리뷰 수: {}", globalAvg, MIN_REVIEWS);
+
+        return bookRepository.findPopularBooks(
+                MIN_REVIEWS,
+                globalAvg,
+                PageRequest.of(0, limit)
+        );
+    }
+
 
     /**
      * ISBN을 통해 db 도서 조회

@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("api/books")
 @RequiredArgsConstructor
@@ -24,6 +26,13 @@ public class BookController {
     public ResponseEntity<Book> getBookByIsbn(@PathVariable String isbn){
         Book book = bookService.getBookByIsbn(isbn);
         return ResponseEntity.ok(book);
+    }
+
+    @GetMapping("/popular")
+    public ResponseEntity<List<Book>> getPopularBooks(
+            @RequestParam(defaultValue = "10") int limit) {
+        List<Book> popularBooks = bookService.getPopularBooks(limit);
+        return ResponseEntity.ok(popularBooks);
     }
 
 }

@@ -3,6 +3,7 @@ package com.teamcloud.bookmoa.domain.book.dto;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
 import java.util.List;
 
 @Getter
