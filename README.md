@@ -212,7 +212,7 @@ Swagger UI를 통해 모든 API를 확인하고 테스트할 수 있습니다.
 | PUT | `/api/reviews/{id}` | 리뷰 수정 |
 | DELETE | `/api/reviews/{id}` | 리뷰 삭제 |
 
-자세한 API 명세는 [API 문서](docs/api.md)를 참고하세요.
+자세한 API 명세는 Swagger 문서를 참고하세요.
 
 ---
 
