@@ -56,6 +56,10 @@ jobs:
           # build.gradle 변경 시에만 캐시 무효화
           restore-keys: |
             ${{ runner.os }}-gradle-
+
+      # 권한 추가
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
             
       # -----------------------------------------------------------------------
       # Step 4: Gradle 빌드 (테스트 포함)
