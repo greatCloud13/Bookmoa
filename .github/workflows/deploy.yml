@@ -90,7 +90,7 @@ jobs:
     needs: build-and-test
     # build-and-test job이 성공해야만 실행
 
-    if: github.evnet_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # push 이벤트이고 main 브랜치일 때만 실행
     # Pull Request에서는 이미지 푸시 안 함 (테스트만)
 
