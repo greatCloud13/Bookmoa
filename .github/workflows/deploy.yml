@@ -44,7 +44,7 @@ jobs:
       # Step 3: Gradle 캐싱
       # -----------------------------------------------------------------------
       - name: Cache Gradle packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -72,7 +72,7 @@ jobs:
       - name: Upload test results
         if: failure()
         # 이전 step이 실패했을 때만 실행
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: build/reports/tests/
@@ -98,7 +98,7 @@ jobs:
       # Docker Buildx 설정
       # -----------------------------------------------------------------------
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       # Docker Buildx: 고급 빌드 기능 제공
       # 멀티 플랫폼 빌드, 캐싱 최적화
 
