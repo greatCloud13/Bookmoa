@@ -1,3 +1,15 @@
+# =============================================================================
+# Docker Compose 파일
+# =============================================================================
+# 역할: 여러 컨테이너를 하나의 애플리케이션처럼 관리
+# 이유:
+# - MySQL, Redis, RabbitMQ, Spring Boot 을 한번에 묶어서 관리하면 관리 용이성 증가
+# - 한 번에 실행/중지 가능
+# - 컨테이너 간 네트워크 구성 정의로 자동화
+# - 의존성 순서 관리 (MySQL → 앱)
+# =============================================================================
+
+
 version: '3.8'
 
 services:
@@ -6,16 +18,20 @@ services:
     image: mysql:8.0
     container_name: bookmoa-mysql # 컨테이너 이름
     environment:
-      MYSQL_ROOT_PASSWORD: root1234 # root 계정 비밀번호
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # root 계정 비밀번호
       MYSQL_DATABASE: bookmoa       # 초기 생성 DB명
-      MYSQL_USER: bookmoa           # 애플리케이션용 초기 사용자 계정
-      MYSQL_PASSWORD: bookmoa1234   # 애플리케이션용 초기 사용자 비밀번호
     ports:
       - "3306:3306" # 호스트:컨테이너 포트 매핑
     volumes:
       - mysql-data:/var/lib/mysql     # 데이터 영속성을 위한 볼륨 마운트
     networks:
       - bookmoa-network  # 서비스 간 통신을 위한 네트워크
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}" ] # mysqladmin ping: MySQL 서버가 응답하는지 확인
+      interval: 10s # 10초 마다 체크
+      timeout: 5s # 5초 내 응답 없으면 실패
+      retries: 5 # 5번 실패하면 unhealthy
+      start_period: 30s # 시작 후 30초는 실패해도 무시 (초기화 시간)
 
   # Redis 캐시 서비스
   redis:
@@ -26,22 +42,69 @@ services:
     networks:
       - bookmoa-network
 
+
   # RabbitMQ
   rabbitmq:
     image: rabbitmq:3-management-alpine # 관리 UI 포함 RabbitMQ 이미지
     container_name: bookmoa-rabbitmq
     environment:
-      RABBITMQ_DEFAULT_USER: bookmoa      # RabbitMQ 사용자 계정
-      RABBITMQ_DEFAULT_PASS: bookmoa1234  # RabbitMQ 사용자 비밀번호
+      RABBITMQ_DEFAULT_USER: guest      # RabbitMQ 사용자 계정
+      RABBITMQ_DEFAULT_PASS: guest  # RabbitMQ 사용자 비밀번호
     ports:
       - "5672:5672" # AMQP 프로토콜 포트 (애플리케이션 연결용)
       - "15672:15672" # Management UI 포트 (웹 관리 콘솔)
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq # Queue 설정, 메시지 영속화
+    networks:
+      - bookmoa-network
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      # rabbitmq-diagnostics ping: RabbitMQ 서버 상태 확인
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Spring Boot 애플리케이션
+  app:
+    build: . # Dockerfile을 사용하여 이미지 빌드
+
+    container_name: bookmoa
+
+    environment:
+      # 컨테이너 내부 환경 변수
+      SPRING_PROFILES_ACTIVE: prod # 프로덕션 프로필 활성화
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/bookmoa?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+
+      ALADIN_API_KEY: ${ALADIN_API_KEY}
+
+    ports:
+      - "8080:8080" #호스트:컨테이너
+
+    depends_on: # 의존성 순서 관리 service_healthy: healthcheck 통과 후 시작, service_started: 컨테이너 시작만 확인
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
     networks:
       - bookmoa-network
 
 # 데이터 영속성을 위한 볼륨 정의
 volumes:
   mysql-data:  # MySQL 데이터를 저장할 Docker 볼륨
+  rabbitmq-data:
 
 # 컨테이너 간 통신을 위한 네트워크 정의
 networks:
