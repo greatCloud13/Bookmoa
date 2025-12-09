@@ -1,0 +1,291 @@
+# =============================================================================
+# GitHub Actions CI/CD Workflow
+# =============================================================================
+# 역할: 코드 푸시 시 자동으로 테스트, 빌드, Docker 이미지 생성, EC2 배포
+# 트리거: main 브랜치에 push 또는 pull request
+# =============================================================================
+
+name: CI/CD pipeline
+
+# 트리거
+on:
+  push:
+    branches: [ main ]
+
+  pull_request:
+    branches: [ main ]
+
+# 환경변수
+env:
+  DOCKER_IMAGE: greatcloud13/bookmoa
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    # GitHub가 제공하는 Ubuntu 가상 서버에서 실행
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Step 1: 코드 체크아웃
+      # -----------------------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Step 2: JDK 설치
+      # -----------------------------------------------------------------------
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # -----------------------------------------------------------------------
+      # Step 3: Gradle 캐싱
+      # -----------------------------------------------------------------------
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          # Gradle 의존성과 wrapper를 캐시
+          # 매번 다운로드하면 5분 소요 → 캐시하면 30초
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          # 캐시 키: OS + Gradle 파일들의 해시값
+          # build.gradle 변경 시에만 캐시 무효화
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+            
+      # -----------------------------------------------------------------------
+      # Step 4: Gradle 빌드 (테스트 포함)
+      # -----------------------------------------------------------------------
+      - name: Build with Gradle
+        run: ./gradlew clean build
+        # clean: 이전 빌드 산출물 삭제
+        # build: 컴파일 + 테스트 + JAR 생성
+        # 테스트 실패 시 여기서 중단 (배포 방지)
+
+      # -----------------------------------------------------------------------
+      # Step 5: 테스트 결과 업로드 (실패 시)
+      # -----------------------------------------------------------------------
+      - name: Upload test results
+        if: failure()
+        # 이전 step이 실패했을 때만 실행
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: build/reports/tests/
+          # 테스트 실패 리포트를 GitHub에 업로드
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Docker 이미지 빌드 및 푸시
+  # ---------------------------------------------------------------------------
+  build-and-push-docker:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    # build-and-test job이 성공해야만 실행
+
+    if: github.evnet_name == 'push' && github.ref == 'refs/heads/main'
+    # push 이벤트이고 main 브랜치일 때만 실행
+    # Pull Request에서는 이미지 푸시 안 함 (테스트만)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Docker Buildx 설정
+      # -----------------------------------------------------------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      # Docker Buildx: 고급 빌드 기능 제공
+      # 멀티 플랫폼 빌드, 캐싱 최적화
+
+      # -----------------------------------------------------------------------
+      # DockerHub 로그인
+      # -----------------------------------------------------------------------
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          # GitHub Secrets에서 비밀번호 및 토큰 불러옴
+
+      # -----------------------------------------------------------------------
+      # Docker 이미지 빌드 및 푸시
+      # -----------------------------------------------------------------------
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          # 빌드 컨텍스트: 현재 디렉토리
+          push: true
+          # DockerHub에 푸시
+          tags: |
+            ${{ env.DOCKER_IMAGE }}:latest
+            ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          # 2개 태그 생성:
+          # 1. latest: 항상 최신 버전
+          # 2. git commit SHA: 특정 버전 식별
+          # 이유: 롤백 시 특정 커밋 버전으로 되돌리기 가능
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # GitHub Actions 캐시 활용
+          # 이유: 레이어 캐싱으로 빌드 속도 10배 향상
+  # ---------------------------------------------------------------------------
+  # Job 3: EC2 배포
+  # ---------------------------------------------------------------------------
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push-docker
+    # Docker 이미지 푸시 성공 후 실행
+
+    steps:
+      # -----------------------------------------------------------------------
+      # EC2 SSH 배포
+      # -----------------------------------------------------------------------
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        # SSH로 EC2 접속하여 명령 실행
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          # EC2 Public IP
+          username: ${{ secrets.EC2_USERNAME }}
+          # ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          # PEM 키 파일 내용
+          script: |
+            # -----------------------------------------------------------------
+            # Docker 및 Docker Compose 설치 확인
+            # -----------------------------------------------------------------
+            if ! command -v docker &> /dev/null; then
+              echo "Installing Docker..."
+              sudo apt-get update
+              sudo apt-get install -y docker.io docker-compose
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -aG docker ubuntu
+            fi
+
+            # -----------------------------------------------------------------
+            # 작업 디렉토리 생성
+            # -----------------------------------------------------------------
+            mkdir -p ~/bookmoa
+            cd ~/bookmoa
+
+            # -----------------------------------------------------------------
+            # docker-compose.yml 생성
+            # -----------------------------------------------------------------
+            # EC2에 소스 코드가 없으므로 원격으로 생성
+            cat > docker-compose.yml << 'EOF'
+            version: '3.8'
+
+            services:
+              mysql:
+                image: mysql:8.0
+                container_name: bookmoa-mysql
+                environment:
+                  MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+                  MYSQL_DATABASE: bookmoa
+                ports:
+                  - "3306:3306"
+                volumes:
+                  - mysql-data:/var/lib/mysql
+                networks:
+                  - bookmoa-network
+                healthcheck:
+                  test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${{ secrets.MYSQL_ROOT_PASSWORD }}"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+                  start_period: 30s
+
+              redis:
+                image: redis:7.2-alpine
+                container_name: bookmoa-redis
+                ports:
+                  - "6379:6379"
+                networks:
+                  - bookmoa-network
+
+              rabbitmq:
+                image: rabbitmq:3-management-alpine
+                container_name: bookmoa-rabbitmq
+                environment:
+                  RABBITMQ_DEFAULT_USER: guest
+                  RABBITMQ_DEFAULT_PASS: guest
+                ports:
+                  - "5672:5672"
+                  - "15672:15672"
+                volumes:
+                  - rabbitmq-data:/var/lib/rabbitmq
+                networks:
+                  - bookmoa-network
+                healthcheck:
+                  test: ["CMD", "rabbitmq-diagnostics", "ping"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+                  start_period: 30s
+
+              app:
+                image: ${{ env.DOCKER_IMAGE }}:latest
+                # DockerHub에서 최신 이미지 pull
+                container_name: bookmoa
+                environment:
+                  SPRING_PROFILES_ACTIVE: prod
+                  SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/bookmoa?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+                  SPRING_DATASOURCE_USERNAME: root
+                  SPRING_DATASOURCE_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+                  SPRING_REDIS_HOST: redis
+                  SPRING_REDIS_PORT: 6379
+                  SPRING_RABBITMQ_HOST: rabbitmq
+                  SPRING_RABBITMQ_PORT: 5672
+                  ALADIN_API_KEY: ${{ secrets.ALADIN_API_KEY }}
+                ports:
+                  - "8080:8080"
+                depends_on:
+                  mysql:
+                    condition: service_healthy
+                  redis:
+                    condition: service_started
+                  rabbitmq:
+                    condition: service_healthy
+                networks:
+                  - bookmoa-network
+                restart: unless-stopped
+
+            volumes:
+              mysql-data:
+              rabbitmq-data:
+
+            networks:
+              bookmoa-network:
+                driver: bridge
+            EOF
+
+            # -----------------------------------------------------------------
+            # 최신 이미지 Pull 및 재배포
+            # -----------------------------------------------------------------
+            sudo docker-compose pull app
+            # DockerHub에서 최신 이미지 다운로드
+          
+            sudo docker-compose up -d
+            # 백그라운드로 모든 서비스 시작
+            # -d: detached mode (터미널 점유 안 함)
+          
+            # -----------------------------------------------------------------
+            # 배포 확인
+            # -----------------------------------------------------------------
+            echo "Waiting for application to start..."
+            sleep 30
+            # 앱 시작 대기 (30초)
+          
+            sudo docker-compose ps
+            # 컨테이너 상태 출력
+          
+            sudo docker-compose logs --tail=50 app
+            # 앱 로그 마지막 50줄 출력
+            # 이유: 배포 성공/실패 확인
+            
