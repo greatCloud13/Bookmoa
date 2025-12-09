@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:testdb
+    url: jdbc:h2:mem:testdb;MODE=MySQL
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -9,11 +9,37 @@ spring:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
       ddl-auto: create-drop
+    show-sql: false
+
+  data:
+    redis:
+      repositories:
+        enabled: false
 
   redis:
     host: localhost
     port: 6379
 
+  # 캐시 비활성화 (Redis 대신)
+  cache:
+    type: none
+
   rabbitmq:
     host: localhost
     port: 5672
+    username: guest
+    password: guest
+
+# 알라딘 API (더미 값)
+aladin:
+  api:
+    key: test-dummy-key-12345
+    base-url: http://localhost
+
+# 로깅 레벨
+logging:
+  level:
+    root: WARN
+    com.teamcloud.bookmoa: INFO
+    org.springframework.amqp: ERROR
+    # RabbitMQ 연결 실패 로그 숨기기
