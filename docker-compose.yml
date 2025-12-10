@@ -67,7 +67,7 @@ services:
 
   # Spring Boot 애플리케이션
   app:
-    build: . # Dockerfile을 사용하여 이미지 빌드
+    image: greatcloud13/bookmoa:latest # Dockerfile을 사용하여 이미지 빌드
 
     container_name: bookmoa
 
