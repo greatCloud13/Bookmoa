@@ -58,6 +58,8 @@
  **서버 응답 속도 10.8배 향상**  
  DB I/O → Redis 메모리 조회로 전환
 
+ Docker Compose + Git Actions 기반 **CI/CD 자동 배포** 구현
+
 ---
 
 ##  기술 스택
