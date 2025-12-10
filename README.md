@@ -244,8 +244,8 @@ Swagger UI를 통해 모든 API를 확인하고 테스트할 수 있습니다.
 
 ##  향후 계획
 
-- [ ] AWS EC2 배포
-- [ ] GitHub Actions CI/CD 구축
+- [X] AWS EC2 배포
+- [X] GitHub Actions CI/CD 구축
 - [ ] 예외 처리 강화 (GlobalExceptionHandler)
 - [ ] 통합 테스트 작성
 - [ ] Prometheus + Grafana 모니터링
