@@ -17,6 +17,7 @@ spring:
     password: guest
 
   jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
     show-sql: false
